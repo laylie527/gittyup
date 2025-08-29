@@ -12,6 +12,9 @@ const
   v218 = "c245dde54a6ae6a35a914337e7303769af121f01"
   cloneme = parseURI"https://github.com/disruptek/gittyup"
 
+proc toException(code: GitResultCode): ref CatchableError =
+  newException(CatchableError, dumpError(code))
+
 proc cleanup(directory: string) =
   ## obliterate a temporary directory
   try:
@@ -70,42 +73,35 @@ suite "giddy up, pardner":
 
   ## get the head
   test:
-    head := repo.repositoryHead:
-      fail dumpError(code)
+    let head = repo.repositoryHead.tryGet
     let oid = head.oid
     check $oid != ""
 
   ## get a thing for 2.1.8
   test:
-    thing := repo.lookupThing("2.1.8"):
-      fail dumpError(code)
+    let thing = repo.lookupThing("2.1.8").tryGet
     check $thing.oid == v218
 
   ## remote lookup
   test:
-    origin := repo.remoteLookup("origin"):
-      fail dumpError(code)
+    let origin = repo.remoteLookup("origin").tryGet
     check "gittyup" in origin.url.path
 
   ## clone ourselves
   test:
-    cloned := clone(cloneme, tmpdir):
-      fail dumpError(code)
+    let cloned = clone(cloneme, tmpdir).tryGet
     check GIT_REPOSITORY_STATE_NONE == repositoryState cloned
 
   ## create and delete a tag
   test:
-    thing := repo.lookupThing "HEAD":
-      fail dumpError(code)
-    oid := thing.tagCreate "test":
-      fail dumpError(code)
+    let thing = repo.lookupThing("HEAD").tryGet
+    discard thing.tagCreate("test").tryGet
     check repo.tagDelete("test") == GIT_OK
     check repo.tagDelete("test") == GIT_ENOTFOUND
 
   ## tag table
   test:
-    tags := repo.tagTable:
-      fail dumpError(code)
+    let tags = repo.tagTable.tryGet
     if "test" in tags:
       check repo.tagDelete("test") == GIT_OK
     else:
@@ -119,17 +115,14 @@ suite "giddy up, pardner":
   ## revision walk
   test:
     # clone ourselves into tmpdir
-    cloned := cloneme.clone(tmpdir):
-      fail dumpError(code)
+    let cloned = cloneme.clone(tmpdir).tryGet
     check GIT_REPOSITORY_STATE_NONE == cloned.repositoryState
 
     # we'll need a walker, and we'll want it freed
-    walker := cloned.newRevWalk:
-      fail dumpError(code)
+    let walker = cloned.newRevWalk.tryGet
 
     # find the head
-    head := cloned.getHeadOid:
-      fail dumpError(code)
+    let head = cloned.getHeadOid.tryGet
 
     # start at the head
     gitTrap walker.push(head)
@@ -141,8 +134,7 @@ suite "giddy up, pardner":
 
   ## commits for spec
   test:
-    cloned := cloneme.clone(tmpdir):
-      fail dumpError(code)
+    let cloned = cloneme.clone(tmpdir).tryGet
     check GIT_REPOSITORY_STATE_NONE == cloned.repositoryState
     let
       dotnimble = "gittyup.nim"
@@ -171,8 +163,7 @@ suite "giddy up, pardner":
 
   ## fetchRemote
   test:
-    cloned := cloneme.clone(tmpdir):
-      fail dumpError(code)
+    let cloned = cloneme.clone(tmpdir).tryGet
     check GIT_REPOSITORY_STATE_NONE == cloned.repositoryState
     check cloned.fetchRemote("origin") == GIT_OK
 

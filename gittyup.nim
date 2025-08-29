@@ -208,21 +208,6 @@ template gitTrap*(allocd: typed; code: GitResultCode; body: untyped) =
       free(allocd)
   gitTrap(code, body)
 
-template `:=`*[T](v: untyped{nkIdent}; vv: Result[T, GitResultCode];
-                  body: untyped): untyped =
-  var vr = vv
-  template v: auto {.used.} = unsafeGet(vr)
-  defer:
-    if isOk(vr):
-      when defined(debugGit):
-        debug "auto-free of " & $typeof(unsafeGet(vr))
-      free(unsafeGet(vr))
-  if not isOk(vr):
-    var code {.used, inject.} = vr.error
-    when defined(debugGit):
-      debug "failure: " & $code
-    body
-
 proc normalizeUrl(uri: Uri): Uri =
   ## turn a git@github.com: url into an ssh url with username, hostname
   const
@@ -1078,11 +1063,12 @@ proc getHeadOid*(repo: GitRepository): GitResult[GitOid] =
   withGit:
     block complete:
       # free the head after we're done with it
-      head := repo.headReference:
-        result.err code
+      let head = repo.headReference
+      if head.isErr:
+        result.err head.error
         break complete
       # return a copy of the oid so we can free the head
-      result = head.oid.copy
+      result = head.get.oid.copy
 
 proc repositoryState*(repository: GitRepository): GitRepoState =
   ## fetch the state of a repository
@@ -1192,10 +1178,11 @@ proc checkoutTree*(repo: GitRepository; reference: string;
   ## limit the checkout to, uh, those particular paths
   withGit:
     block complete:
-      thing := repo.lookupThing(reference):
-        setResultAsError(result, code)
+      let thing = repo.lookupThing(reference)
+      if thing.isErr:
+        setResultAsError(result, thing.error)
         break complete
-      result = repo.checkoutTree(thing, paths = paths, strategy = strategy)
+      result = repo.checkoutTree(thing.get, paths = paths, strategy = strategy)
 
 proc checkoutHead*(repo: GitRepository;
                    strategy = defaultCheckoutStrategy): GitResultCode =
@@ -1319,10 +1306,11 @@ proc push*(walker: GitRevWalker; oid: GitOid): GitResultCode =
   ## add a starting oid for the walker to begin at
   withGit:
     block complete:
-      pushee := copy(oid):
-        setResultAsError(result, code)
+      let pushee = copy(oid)
+      if pushee.isErr:
+        setResultAsError(result, pushee.error)
         break complete
-      result = git_revwalk_push(walker, pushee).grc
+      result = git_revwalk_push(walker, pushee.get).grc
 
 proc lookupCommit*(repo: GitRepository; oid: GitOid): GitResult[GitThing] =
   ## try to look a commit up in the repository with the given name
@@ -1521,27 +1509,30 @@ iterator commitsForSpec*(repo: GitRepository;
         free options.pathspec.GittyStrArray
 
       # setup a pathspec for matching against trees, and free it later
-      ps := newPathSpec(spec):
-        yield GitResult[GitThing].err(code)
+      let ps = newPathSpec(spec)
+      if ps.isErr:
+        yield GitResult[GitThing].err(ps.error)
         break complete
 
       # we'll need a walker, and we'll want it freed
-      walker := repo.newRevWalk:
-        yield GitResult[GitThing].err(code)
+      let walker = repo.newRevWalk
+      if walker.isErr:
+        yield GitResult[GitThing].err(walker.error)
         break complete
 
       # find the head
-      head := repo.getHeadOid:
+      let head = repo.getHeadOid
+      if head.isErr:
         # no head, no problem
         break complete
 
       # start at the head
-      gitTrap walker.push(head):
+      gitTrap walker.get.push(head.get):
         break complete
 
       # iterate over ALL the commits
       # pass a copy of the head oid so revwalk can free it
-      for rev in repo.revWalk(walker):
+      for rev in repo.revWalk(walker.get):
         # if there's an error, yield it
         if rev.isErr:
           #yield ok[GitThing](rev.get)
@@ -1549,7 +1540,7 @@ iterator commitsForSpec*(repo: GitRepository;
           break complete
         else:
           let
-            matched = rev.get.commit.parentsMatch(options, ps)
+            matched = rev.get.commit.parentsMatch(options, ps.get)
           if matched.isOk and matched.get:
             # all the parents matched, so yield this revision
             #yield ok[GitThing](rev.get)
