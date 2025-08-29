@@ -1,4 +1,3 @@
-import std/macros except error
 import std/math
 import std/times
 import std/logging
@@ -11,6 +10,7 @@ import std/strutils
 import std/hashes
 import std/tables
 import std/uri
+import std/enumutils
 
 import hlibgit2/strarray
 import hlibgit2/types
@@ -141,12 +141,7 @@ proc hash*(gcs: GitCheckoutStrategy): Hash =
   ## too large an enum for native sets
   gcs.ord.hash
 
-macro enumValues(e: typed): untyped =
-  newNimNode(nnkCurly).add(e.getType[1][1..^1])
-
 const
-  validGitStatusFlags = enumValues(GitStatusFlag)
-  validGitObjectKinds = enumValues(GitObjectKind)
   defaultCheckoutStrategy = [
     GIT_CHECKOUT_SAFE,
     GIT_CHECKOUT_RECREATE_MISSING,
@@ -534,7 +529,7 @@ func isTag*(got: GitReference): bool =
 proc flags*(status: GitStatus): set[GitStatusFlag] =
   ## produce the set of flags indicating the status of the file
   assert not status.isNil
-  for flag in validGitStatusFlags.items:
+  for flag in GitStatusFlag.items:
     if flag.ord.uint == bitand(status.status.uint, flag.ord.uint):
       result.incl flag
 
