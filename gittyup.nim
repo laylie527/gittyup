@@ -37,8 +37,8 @@ import hlibgit2/revparse
 import hlibgit2/revwalk
 import hlibgit2/signature
 
-import badresults
-export badresults
+import results
+export results
 
 const
   GIT_DIFF_OPTIONS_VERSION* = 1
