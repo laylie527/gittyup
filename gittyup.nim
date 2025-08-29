@@ -213,20 +213,6 @@ template gitTrap*(allocd: typed; code: GitResultCode; body: untyped) =
       free(allocd)
   gitTrap(code, body)
 
-# set a result variable `self` to value/error
-template ok*[T](self: var Result[T, GitResultCode]; x: T): auto =
-  badresults.ok(self.Result, x)
-template err*[T](self: var Result[T, GitResultCode]; x: GitResultCode): auto =
-  badresults.err(self.Result, x)
-
-# create a new result (eg. for an iterator)
-template ok*[T](x: T): auto =
-  #results.ok(Result[T, GitResultCode], x)
-  badresults.ok(GitResult[T], x)
-template err*[T](x: GitResultCode): auto =
-  #results.err(Result[T, GitResultCode], x)
-  badresults.err(Result[T, GitResultCode], x)
-
 template `:=`*[T](v: untyped{nkIdent}; vv: Result[T, GitResultCode];
                   body: untyped): untyped =
   var vr = vv
@@ -1365,7 +1351,7 @@ iterator revWalk*(repo: GitRepository;
       # so we don't end up trying to free it below
       if future.isErr:
         if future.error != GIT_ENOTFOUND:
-          yield err[GitThing](future.error)
+          yield GitResult[GitThing].err(future.error)
         break complete
 
       while future.isOk:
@@ -1379,7 +1365,7 @@ iterator revWalk*(repo: GitRepository;
         if commit.isErr:
           if commit.error != GIT_ENOTFOUND:
             # undefined error; emit it as such
-            yield err[GitThing](commit.error)
+            yield GitResult[GitThing].err(commit.error)
           # and then break iteration
           break
 
@@ -1392,7 +1378,7 @@ iterator revWalk*(repo: GitRepository;
           # if we didn't reach the end of iteration,
           if future.error notin {GIT_ITEROVER, GIT_ENOTFOUND}:
             # emit the error
-            yield err[GitThing](future.error)
+            yield GitResult[GitThing].err(future.error)
 
 proc newPathSpec*(spec: openArray[string]): GitResult[GitPathSpec] =
   ## instantiate a new path spec from a strarray
@@ -1532,7 +1518,7 @@ iterator commitsForSpec*(repo: GitRepository;
       let
         code = git_diff_options_init(options, GIT_DIFF_OPTIONS_VERSION).grc
       if code != GIT_OK:
-        yield err[GitThing](code)
+        yield GitResult[GitThing].err(code)
         break complete
 
       options.pathspec = spec.toStrArray().git_strarray
@@ -1541,12 +1527,12 @@ iterator commitsForSpec*(repo: GitRepository;
 
       # setup a pathspec for matching against trees, and free it later
       ps := newPathSpec(spec):
-        yield err[GitThing](code)
+        yield GitResult[GitThing].err(code)
         break complete
 
       # we'll need a walker, and we'll want it freed
       walker := repo.newRevWalk:
-        yield err[GitThing](code)
+        yield GitResult[GitThing].err(code)
         break complete
 
       # find the head
