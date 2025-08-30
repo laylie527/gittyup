@@ -37,7 +37,6 @@ template setup(): GitRepository =
 
 template teardown() {.dirty.} =
   ## tear down a test repo
-  free repo
   check shutdown()
   cleanup tmpdir
 
@@ -130,7 +129,6 @@ suite "giddy up, pardner":
     # perform the walk
     for rev in cloned.revWalk(walker):
       check rev.isOk
-      free rev.get
 
   ## commits for spec
   test:
@@ -141,9 +139,6 @@ suite "giddy up, pardner":
 
     var
       things: seq[GitThing] = @[]
-    defer:
-      while things.len > 0:
-        free things.pop
 
     proc dump(things: var seq[GitThing]): string =
       for n in things.items:
