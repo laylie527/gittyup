@@ -3,3 +3,7 @@ nimblemeta.json
 bin
 deps
 run\ nimble\ test
+nimble.develop
+nimble.paths
+nimbledeps
+config.nims
