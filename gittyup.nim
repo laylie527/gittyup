@@ -54,7 +54,7 @@ when not compiles(git_strarray_dispose):
 
 type
   # separating out stuff we free via routines from libgit2
-  GitHeapGits = git_remote | git_tag |
+  GitHeapGits = git_tag |
                 git_object | git_commit | git_status_list |
                 git_annotated_commit | git_tree_entry | git_revwalk | git_buf |
                 git_pathspec | git_tree | git_diff | git_pathspec_match_list |
@@ -91,7 +91,8 @@ type
   GitObject* = ptr git_object
   GitOid* = ptr git_oid
   GitOids* = seq[GitOid]
-  GitRemote* = ptr git_remote
+  GitRemote* = object
+    p: ptr git_remote
   GitReference* = object
     p: ptr git_reference
   GitRepository* = object
@@ -133,6 +134,7 @@ export git_pathspec_flag_t
 
 proc `=copy`(dst: var GitRepository; src: GitRepository) {.error.}
 proc `=copy`(dst: var GitReference; src: GitReference) {.error.}
+proc `=copy`(dst: var GitRemote; src: GitRemote) {.error.}
 
 template destroyImpl(lgp: untyped; freeProc: proc) =
   let point = lgp.p
@@ -144,6 +146,9 @@ proc `=destroy`(p: GitRepository) =
 
 proc `=destroy`(p: GitReference) =
   destroyImpl(p, git_reference_free)
+
+proc `=destroy`(p: GitRemote) =
+  destroyImpl(p, git_remote_free)
 
 # these just cast some cints into appropriate enums
 template grc(code: cint): GitResultCode =
@@ -365,8 +370,6 @@ proc free*[T: GitHeapGits](point: ptr T) =
         debug "\t~> freeing git " & $typeof(point)
       when false:
         discard
-      elif T is git_remote:
-        git_remote_free(point)
       elif T is git_tag:
         git_tag_free(point)
       elif T is git_commit:
@@ -505,9 +508,9 @@ proc short*(oid: GitOid; size: int): GitResult[string] =
 
 proc url*(remote: GitRemote): Uri =
   ## retrieve the url of a remote
-  assert not remote.isNil
+  assert remote.p != nil
   withGit:
-    result = parseUri($git_remote_url(remote)).normalizeUrl
+    result = parseUri($git_remote_url(remote.p)).normalizeUrl
 
 proc oid*(entry: GitTreeEntry): GitOid =
   ## retrieve the oid of the input
@@ -552,8 +555,8 @@ func name*(entry: GitTreeEntry): string =
 
 func name*(remote: GitRemote): string =
   ## retrieve the name of the input
-  assert not remote.isNil
-  result = $git_remote_name(remote)
+  assert not remote.p.isNil
+  result = $git_remote_name(remote.p)
 
 func isTag*(got: GitReference): bool =
   ## true if the supplied reference is a tag
@@ -584,7 +587,7 @@ func `$`*(walker: GitRevWalker): string =
   result = "{poorly-rendered revwalker}"
 
 func `$`*(remote: GitRemote): string =
-  assert not remote.isNil
+  assert not remote.p.isNil
   result = remote.name
 
 func `$`*(repo: GitRepository): string =
@@ -909,12 +912,9 @@ proc fetchRemote*(repo: GitRepository; remoteName: string; refSpecs: GittyStrArr
       fetchOpts: git_fetch_options
       remote: GitRemote
     withResultOf git_fetch_options_init(addr fetchOpts, GIT_FETCH_OPTIONS_VERSION):
-      withResultOf git_remote_lookup(addr remote, repo.p, remoteName.cstring):
-        assert not remote.isNil
-        try:
-          result = git_remote_fetch(remote, addr refSpecs, addr fetchOpts, "fetch").grc
-        finally:
-          free remote
+      withResultOf git_remote_lookup(addr remote.p, repo.p, remoteName.cstring):
+        assert not remote.p.isNil
+        result = git_remote_fetch(remote.p, addr refSpecs, addr fetchOpts, "fetch").grc
 
 proc fetchRemote*(repo: GitRepository; remoteName: string): GitResultCode =
   ## fetch from repo at given remoteName
@@ -957,8 +957,8 @@ proc remoteLookup*(repo: GitRepository; name: string): GitResult[GitRemote] =
   withGit:
     var
       remote: GitRemote
-    withResultOf git_remote_lookup(addr remote, repo.p, name):
-      assert not remote.isNil
+    withResultOf git_remote_lookup(addr remote.p, repo.p, name):
+      assert not remote.p.isNil
       result.ok remote
 
 proc remoteRename*(repo: GitRepository; prior: string;
@@ -984,8 +984,8 @@ proc remoteCreate*(repo: GitRepository; name: string;
   withGit:
     var
       remote: GitRemote
-    withResultOf git_remote_create(addr remote, repo.p, name.cstring, cstring($url)):
-      assert not remote.isNil
+    withResultOf git_remote_create(addr remote.p, repo.p, name.cstring, cstring($url)):
+      assert not remote.p.isNil
       result.ok remote
 
 proc `==`*(a, b: GitOid): bool =
